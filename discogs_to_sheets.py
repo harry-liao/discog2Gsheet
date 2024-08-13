@@ -3,13 +3,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from gspread_formatting import *
 import re
-
-# Discogs API配置
-DISCOGS_USER_TOKEN = 'VYSpCsnQtNrDsWETLCxZSSMRjNcdRjPTNvTUpXpw'
-
-# Google Sheets API配置
-GOOGLE_SHEETS_CREDENTIALS_FILE = 'elated-guild-424207-g7-58c6c832a459.json'
-GOOGLE_SHEET_NAME = '奮死庫存2024 的副本'
+from config import (DISCOGS_USER_TOKEN, GOOGLE_SHEETS_CREDENTIALS_FILE, GOOGLE_SHEET_NAME, WORKSHEET_NAME, COLORS, APPLY_COLORS)
 
 # Discogs API客户端
 d = discogs_client.Client('ExampleApplication/0.1', user_token=DISCOGS_USER_TOKEN)
@@ -36,8 +30,8 @@ def search_and_process(barcode):
             1,  # 庫存，新數據設為1
             '',  # 價格，留空
             artists[0].upper() if artists else '',  # 開頭，取 Artists 第一個字母
-            artists,
-            release.title,
+            artists, 
+            release.title, # album
             '',  # 安娜murmur，留空
             release.year,
             ', '.join(label.name for label in release.labels),
@@ -92,20 +86,28 @@ def update_or_add_row(sheet, new_data):
     # 只格式化新插入或更新的行
     format_new_row(sheet, insert_index if not existing_cells else row)
 
+def get_current_color(sheet, row_index):
+    cell_format = get_user_entered_format(sheet, f'A{row_index}')
+    if cell_format and cell_format.backgroundColor:
+        return cell_format.backgroundColor
+    return None
+
 def format_new_row(sheet, row_index):
-    # 設置條件格式
-    colors = [
-        {"red": 252/255, "green": 228/255, "blue": 205/255},  # 淺橘色
-        {"red": 201/255, "green": 218/255, "blue": 248/255}   # 淺藍色
-    ]
+    if not APPLY_COLORS:
+        return
+
+    # 獲取當前行的顏色
+    current_color = get_current_color(sheet, row_index)
     
-    # 獲取C列中直到新行的唯一值數量
-    c_values = sheet.col_values(3)[:row_index]
-    unique_count = len(set(c_values[1:]))  # 跳過標題行
-    
-    # 決定顏色
-    color_index = unique_count % len(colors)
-    color = colors[color_index]
+    if current_color:
+        # 如果當前行已有顏色，使用該顏色
+        color = current_color
+    else:
+        # 否則，使用預定義的顏色
+        c_values = sheet.col_values(3)[:row_index]
+        unique_count = len(set(c_values[1:]))  # 跳過標題行
+        color_index = unique_count % len(COLORS)
+        color = COLORS[color_index]
     
     # 應用顏色到新行
     format_cell_range(sheet, f'A{row_index}:L{row_index}', CellFormat(backgroundColor=color))
@@ -127,7 +129,7 @@ def main():
     client = gspread.authorize(creds)
 
     # 打開 Google Sheet
-    sheet = client.open(GOOGLE_SHEET_NAME).worksheet('工作表1')
+    sheet = client.open(GOOGLE_SHEET_NAME).worksheet(WORKSHEET_NAME)
 
     while True:
         barcode = input("請輸入條碼 (輸入 'q' 退出): ").strip()
